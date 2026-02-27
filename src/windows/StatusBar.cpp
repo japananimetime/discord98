@@ -1,5 +1,6 @@
 #include "StatusBar.hpp"
 #include "Main.hpp"
+#include "core/DiscordInstance.hpp"
 
 enum {
 	IDP_NOTIFS,
@@ -302,4 +303,46 @@ void StatusBar::UpdateParts(int width)
 	SendMessage(m_hwnd, SB_SETPARTS, _countof(Widths), (LPARAM) Widths);
 
 	SendMessage(m_hwnd, SB_SETTEXT, 1 | SBT_OWNERDRAW, 0);
+}
+
+void StatusBar::UpdateVoiceState()
+{
+	VoiceManager& vm = GetDiscordInstance()->GetVoiceManager();
+
+	std::string voiceText;
+	bool voiceActive = false;
+
+	if (vm.IsConnected())
+	{
+		voiceText = "#" + vm.GetChannelName();
+		if (vm.IsMuted())
+			voiceText += " [Muted]";
+		if (vm.IsDeafened())
+			voiceText += " [Deafened]";
+		voiceActive = true;
+	}
+	else if (vm.IsConnecting())
+	{
+		voiceText = "Connecting...";
+		voiceActive = true;
+	}
+	else if (vm.IsWaitingForServer())
+	{
+		voiceText = "Waiting...";
+		voiceActive = true;
+	}
+
+	// Set voice icon on the notifs part
+	HICON hVoiceIcon = NULL;
+	if (voiceActive) {
+		int smIcon = GetSystemMetrics(SM_CXSMICON);
+		hVoiceIcon = (HICON) ri::LoadImage(g_hInstance, MAKEINTRESOURCE(DMIC(IDI_VOICE)), IMAGE_ICON, smIcon, smIcon, LR_SHARED | LR_CREATEDIBSECTION);
+		if (!hVoiceIcon)
+			hVoiceIcon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_VOICE));
+	}
+	SendMessage(m_hwnd, SB_SETICON, IDP_NOTIFS, (LPARAM)hVoiceIcon);
+
+	LPTSTR tstr = ConvertCppStringToTString(voiceText);
+	SendMessage(m_hwnd, SB_SETTEXT, IDP_NOTIFS, (LPARAM)tstr);
+	free(tstr);
 }

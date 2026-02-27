@@ -3,6 +3,7 @@
 #include <string>
 #include <list>
 #include <map>
+#include <set>
 #include <vector>
 #include <nlohmann/json.h>
 #include "Snowflake.hpp"
@@ -70,6 +71,9 @@ struct Guild
 
 	std::set<Snowflake> m_knownMembers;
 
+	// Voice channel members: channel_id -> set of user_ids
+	std::map<Snowflake, std::set<Snowflake>> m_voiceMembers;
+
 	eMessageNotifications m_defaultMessageNotifications = NOTIF_ALL_MESSAGES;
 
 	int m_order = 0;
@@ -105,6 +109,31 @@ struct Guild
 
 	void AddKnownMember(Snowflake sf) {
 		m_knownMembers.insert(sf);
+	}
+
+	void UpdateVoiceState(Snowflake userId, Snowflake newChannelId) {
+		// Remove user from any existing voice channel
+		for (auto& pair : m_voiceMembers) {
+			pair.second.erase(userId);
+		}
+		// Remove empty sets
+		for (auto it = m_voiceMembers.begin(); it != m_voiceMembers.end(); ) {
+			if (it->second.empty())
+				it = m_voiceMembers.erase(it);
+			else
+				++it;
+		}
+		// Add to new channel (0 means disconnected)
+		if (newChannelId != 0) {
+			m_voiceMembers[newChannelId].insert(userId);
+		}
+	}
+
+	const std::set<Snowflake>* GetVoiceChannelMembers(Snowflake channelId) const {
+		auto it = m_voiceMembers.find(channelId);
+		if (it == m_voiceMembers.end())
+			return nullptr;
+		return &it->second;
 	}
 
 	bool IsUnread();

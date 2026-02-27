@@ -1,11 +1,6 @@
 <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
 <assembly xmlns='urn:schemas-microsoft-com:asm.v1' manifestVersion='1.0'>
-	<dependency>
-		<dependentAssembly>
-			<assemblyIdentity type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*' />
-		</dependentAssembly>
-	</dependency>
-	<compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+<compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
 		<!-- this stuff allows GetVersionEx not to report Windows 8 as its max version.
 		     sadly this means we won't be reporting Windows 12 unless Microsoft doesn't 
 			 change the GUID or until we add it in here -->

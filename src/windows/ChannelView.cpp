@@ -1,4 +1,5 @@
 #include "ChannelView.hpp"
+#include "core/DiscordInstance.hpp"
 #include <tchar.h>
 
 #define CX_BITMAP (16)
@@ -70,6 +71,7 @@ bool ChannelView::InitTreeView()
 	m_nGroupDmIcon    = ri::ImageList_AddIcon(himl, LoadIcon(g_hInstance, MAKEINTRESOURCE(DMIC(IDI_GROUPDM))));
 	m_nChannelDotIcon = ri::ImageList_AddIcon(himl, LoadIcon(g_hInstance, MAKEINTRESOURCE(DMIC(IDI_CHANNEL_UNREAD))));
 	m_nChannelRedIcon = ri::ImageList_AddIcon(himl, LoadIcon(g_hInstance, MAKEINTRESOURCE(DMIC(IDI_CHANNEL_MENTIONED))));
+	m_nVoiceMemberIcon = ri::ImageList_AddIcon(himl, LoadIcon(g_hInstance, MAKEINTRESOURCE(DMIC(IDI_ONLINE_SM))));
 
 	// Fail if not all of the images were added.
 	int ic = ri::ImageList_GetImageCount(himl);
@@ -82,6 +84,13 @@ bool ChannelView::InitTreeView()
 	// Associate the image list with the tree-view control.
 	// It will be destroyed when the window is destroyed.
 	TreeView_SetImageList(hwndTV, himl, TVSIL_NORMAL);
+
+	m_hTreeImageList = himl;
+
+	// Subclass tree view for chat icon click detection
+	m_origTreeWndProc = (WNDPROC)GetWindowLongPtr(hwndTV, GWLP_WNDPROC);
+	SetWindowLongPtr(hwndTV, GWLP_USERDATA, (LONG_PTR)this);
+	SetWindowLongPtr(hwndTV, GWLP_WNDPROC, (LONG_PTR)TreeWndProc);
 
 	SetWindowFont(hwndTV, g_MessageTextFont, TRUE);
 
@@ -254,6 +263,7 @@ void ChannelView::OnUpdateAvatar(Snowflake user)
 void ChannelView::ClearChannels()
 {
 	m_channels.clear();
+	m_voiceMemberIndices.clear();
 
 	if (TreeMode()) {
 		TreeView_DeleteAllItems(m_treeHwnd);
@@ -420,6 +430,90 @@ void ChannelView::RemoveCategoryIfNeeded(const Channel& ch)
 	mem.m_hItem = NULL;
 }
 
+void ChannelView::UpdateVoiceMembers()
+{
+	if (!TreeMode())
+		return;
+
+	// 1. Remove existing voice member tree items
+	for (int idx : m_voiceMemberIndices)
+	{
+		if (idx >= 0 && idx < int(m_channels.size()) && m_channels[idx].m_hItem) {
+			TreeView_DeleteItem(m_treeHwnd, m_channels[idx].m_hItem);
+			m_channels[idx].m_hItem = NULL;
+			m_channels[idx].m_snowflake = 0;
+			m_channels[idx].m_childCount = 0;
+			m_channels[idx].str[0] = 0;
+		}
+	}
+	m_voiceMemberIndices.clear();
+
+	// 2. Get current guild
+	auto inst = GetDiscordInstance();
+	if (!inst) return;
+
+	Guild* pGuild = inst->GetCurrentGuild();
+	if (!pGuild) return;
+
+	Snowflake guildId = pGuild->m_snowflake;
+
+	// 3. For each voice channel with members, add child items
+	for (auto& voicePair : pGuild->m_voiceMembers)
+	{
+		Snowflake channelId = voicePair.first;
+		const std::set<Snowflake>& members = voicePair.second;
+
+		if (members.empty())
+			continue;
+
+		// Find the channel's index and HTREEITEM
+		auto idxIt = m_idToIdx.find(channelId);
+		if (idxIt == m_idToIdx.end())
+			continue;
+
+		int chanIdx = idxIt->second;
+		if (chanIdx < 0 || chanIdx >= int(m_channels.size()))
+			continue;
+
+		HTREEITEM hParent = m_channels[chanIdx].m_hItem;
+		if (!hParent)
+			continue;
+
+		// Reset the previous tracking for this parent so children insert in order
+		SetPrevious(chanIdx, TVI_FIRST);
+
+		for (Snowflake userId : members)
+		{
+			// Look up display name
+			Profile* pProfile = GetProfileCache()->LookupProfile(userId, "", "", "", false);
+			std::string displayName = pProfile ? pProfile->GetName(guildId) : std::to_string(userId);
+
+			// Create a ChannelMember entry
+			ChannelMember cmem;
+			cmem.m_snowflake = userId;
+			cmem.m_childCount = -1; // sentinel: voice member item
+			cmem.m_hItem = NULL;
+
+			const TCHAR* ptr = (const TCHAR*)ConvertCppStringToTString(displayName);
+			_tcsncpy(cmem.str, ptr, _countof(cmem.str));
+			cmem.str[_countof(cmem.str) - 1] = 0;
+			free((void*)ptr);
+
+			int newIdx = int(m_channels.size());
+			m_channels.push_back(cmem);
+
+			// Add to tree as child of the voice channel
+			HTREEITEM hItem = AddItemToTree(m_treeHwnd, m_channels[newIdx].str, hParent, newIdx, chanIdx, m_nVoiceMemberIcon);
+			m_channels[newIdx].m_hItem = hItem;
+
+			m_voiceMemberIndices.insert(newIdx);
+		}
+
+		// Expand the voice channel to show members
+		TreeView_Expand(m_treeHwnd, hParent, TVE_EXPAND);
+	}
+}
+
 ChannelView* ChannelView::Create(HWND hwnd, LPRECT rect)
 {
 	ChannelView* view = new ChannelView;
@@ -524,6 +618,31 @@ bool ChannelView::OnNotifyTree(LRESULT& out, WPARAM wParam, LPARAM lParam)
 
 	switch (nmhdr->code)
 	{
+		case TVN_ITEMEXPANDING:
+		{
+			NMTREEVIEW* nmtv = (NMTREEVIEW*)lParam;
+			if (nmtv->action == TVE_COLLAPSE)
+			{
+				// Prevent collapsing voice channels (they have voice member children)
+				HTREEITEM hItem = nmtv->itemNew.hItem;
+				if (hItem) {
+					TVITEM tvi;
+					tvi.hItem = hItem;
+					tvi.mask = TVIF_PARAM;
+					if (TreeView_GetItem(m_treeHwnd, &tvi)) {
+						size_t idx = size_t(tvi.lParam);
+						if (idx < m_channels.size()) {
+							Channel* pChan = GetDiscordInstance()->GetChannel(m_channels[idx].m_snowflake);
+							if (pChan && pChan->IsVoice()) {
+								out = TRUE;
+								return true; // block collapse
+							}
+						}
+					}
+				}
+			}
+			break;
+		}
 		case TVN_ITEMEXPANDED:
 		{
 			NMTREEVIEW* nmtv = (NMTREEVIEW*)lParam;
@@ -531,7 +650,19 @@ bool ChannelView::OnNotifyTree(LRESULT& out, WPARAM wParam, LPARAM lParam)
 			HTREEITEM hItem = nmtv->itemNew.hItem;
 			if (!hItem) break;
 
-			SetItemIcon(hItem, nmtv->action == TVE_EXPAND ? m_nCategoryCollapseIcon : m_nCategoryExpandIcon);
+			// Only change icons for category items, not voice channels
+			TVITEM tvi;
+			tvi.hItem = hItem;
+			tvi.mask = TVIF_PARAM;
+			if (TreeView_GetItem(m_treeHwnd, &tvi)) {
+				size_t idx = size_t(tvi.lParam);
+				if (idx < m_channels.size()) {
+					Channel* pChan = GetDiscordInstance()->GetChannel(m_channels[idx].m_snowflake);
+					if (pChan && pChan->m_channelType == Channel::CATEGORY) {
+						SetItemIcon(hItem, nmtv->action == TVE_EXPAND ? m_nCategoryCollapseIcon : m_nCategoryExpandIcon);
+					}
+				}
+			}
 			break;
 		}
 		case TVN_SELCHANGED:
@@ -551,13 +682,69 @@ bool ChannelView::OnNotifyTree(LRESULT& out, WPARAM wParam, LPARAM lParam)
 			if (idx >= m_channels.size())
 				break;
 
+			// Skip voice member items (sentinel value)
+			if (m_channels[idx].m_childCount == -1)
+				break;
+
 			Snowflake sf = m_channels[item.lParam].m_snowflake;
 
 			if (sf) {
 				m_currentChannel = sf;
+
+				// Check if this is a voice channel
+				Channel* pChan = GetDiscordInstance()->GetChannel(sf);
+				if (pChan && pChan->IsVoice() && !m_bSuppressVoiceJoin) {
+					Snowflake guildId = GetDiscordInstance()->GetCurrentGuildID();
+					GetDiscordInstance()->GetVoiceManager().JoinVoiceChannel(guildId, sf);
+				}
+				m_bSuppressVoiceJoin = false;
 				GetDiscordInstance()->OnSelectChannel(sf);
 			}
 
+			break;
+		}
+
+		case NM_CUSTOMDRAW:
+		{
+			NMTVCUSTOMDRAW* pInfo = (NMTVCUSTOMDRAW*)lParam;
+
+			switch (pInfo->nmcd.dwDrawStage)
+			{
+				case CDDS_PREPAINT:
+					out = CDRF_NOTIFYITEMDRAW;
+					return true;
+
+				case CDDS_ITEMPREPAINT:
+				{
+					// Check if this is a voice channel — if so, request post-paint to draw chat icon
+					size_t idx = (size_t)pInfo->nmcd.lItemlParam;
+					if (idx < m_channels.size() && m_channels[idx].m_childCount != -1)
+					{
+						Snowflake sf = m_channels[idx].m_snowflake;
+						Channel* pChan = GetDiscordInstance()->GetChannel(sf);
+						if (pChan && pChan->IsVoice()) {
+							out = CDRF_NOTIFYPOSTPAINT;
+							return true;
+						}
+					}
+					out = CDRF_DODEFAULT;
+					return true;
+				}
+
+				case CDDS_ITEMPOSTPAINT:
+				{
+					// Draw chat icon on right side of voice channel item
+					HTREEITEM hItem = (HTREEITEM)pInfo->nmcd.dwItemSpec;
+					RECT rc;
+					TreeView_GetItemRect(m_treeHwnd, hItem, &rc, FALSE);
+					int iconSize = ScaleByDPI(CX_BITMAP);
+					int x = rc.right - iconSize - ScaleByDPI(4);
+					int y = rc.top + (rc.bottom - rc.top - iconSize) / 2;
+					ImageList_Draw(m_hTreeImageList, m_nDmIcon, pInfo->nmcd.hdc, x, y, ILD_TRANSPARENT);
+					out = CDRF_DODEFAULT;
+					return true;
+				}
+			}
 			break;
 		}
 	}
@@ -608,12 +795,17 @@ bool ChannelView::OnNotifyList(LRESULT& out, WPARAM wParam, LPARAM lParam)
 			{
 				int itemID = lplv->iItem;
 
-				// TODO: Select the channel
-				//DbgPrintW("Selected item ID %d", itemID);
 				if (itemID < 0 || itemID >= int(m_channels.size()))
 					return false;
 
 				ChannelMember* pMember = &m_channels[itemID];
+
+				// Check if this is a voice channel
+				Channel* pChan = GetDiscordInstance()->GetChannel(pMember->m_snowflake);
+				if (pChan && pChan->IsVoice()) {
+					Snowflake guildId = GetDiscordInstance()->GetCurrentGuildID();
+					GetDiscordInstance()->GetVoiceManager().JoinVoiceChannel(guildId, pMember->m_snowflake);
+				}
 				GetDiscordInstance()->OnSelectChannel(pMember->m_snowflake);
 			}
 			break;
@@ -823,4 +1015,60 @@ LRESULT ChannelView::ListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 	}
 
 	return CallWindowProc(pView->m_origListWndProc, hWnd, uMsg, wParam, lParam);
+}
+
+LRESULT ChannelView::TreeWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	ChannelView* pView = (ChannelView*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+
+	switch (uMsg)
+	{
+	case WM_DESTROY:
+	{
+		SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)NULL);
+		SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)pView->m_origTreeWndProc);
+		pView->m_treeHwnd = NULL;
+		break;
+	}
+	case WM_LBUTTONDOWN:
+	{
+		POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		TVHITTESTINFO hti = {};
+		hti.pt = pt;
+		HTREEITEM hItem = TreeView_HitTest(hWnd, &hti);
+		if (hItem)
+		{
+			TVITEM tvi;
+			tvi.hItem = hItem;
+			tvi.mask = TVIF_PARAM;
+			if (TreeView_GetItem(hWnd, &tvi))
+			{
+				size_t idx = (size_t)tvi.lParam;
+				if (idx < pView->m_channels.size() && pView->m_channels[idx].m_childCount != -1)
+				{
+					Snowflake sf = pView->m_channels[idx].m_snowflake;
+					Channel* pChan = GetDiscordInstance()->GetChannel(sf);
+					if (pChan && pChan->IsVoice())
+					{
+						// Check if click is on the chat icon (right side of item)
+						RECT rc;
+						TreeView_GetItemRect(hWnd, hItem, &rc, FALSE);
+						int iconSize = ScaleByDPI(CX_BITMAP);
+						int iconX = rc.right - iconSize - ScaleByDPI(4);
+						if (pt.x >= iconX && pt.x < rc.right)
+						{
+							// Chat icon clicked - open text chat only, no voice join
+							pView->m_bSuppressVoiceJoin = true;
+							GetDiscordInstance()->OnSelectChannel(sf);
+							return 0;
+						}
+					}
+				}
+			}
+		}
+		break;
+	}
+	}
+
+	return CallWindowProc(pView->m_origTreeWndProc, hWnd, uMsg, wParam, lParam);
 }

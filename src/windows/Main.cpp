@@ -14,12 +14,14 @@
 #include "ImageLoader.hpp"
 #include "ProfilePopout.hpp"
 #include "ImageViewer.hpp"
+#include "StreamViewerWindow.hpp"
 #include "PinList.hpp"
 #include "LogonDialog.hpp"
 #include "QRCodeDialog.hpp"
 #include "LoadingMessage.hpp"
 #include "UploadDialog.hpp"
 #include "StatusBar.hpp"
+#include "VoicePanel.hpp"
 #include "QuickSwitcher.hpp"
 #include "Frontend_Win32.hpp"
 #include "ProgressDialog.hpp"
@@ -58,6 +60,7 @@ IMemberList* g_pMemberList;
 IChannelView* g_pChannelView;
 MessageEditor* g_pMessageEditor;
 LoadingMessage* g_pLoadingMessage;
+VoicePanel* g_pVoicePanel;
 
 bool g_bBlockDoubleBufferingForThisInstance = false;
 
@@ -262,6 +265,7 @@ void ProperlySizeControls(HWND hWnd)
 	HWND hWndMsg = g_pMessageList->m_hwnd;
 	HWND hWndChv = g_pChannelView->m_hwnd;
 	HWND hWndPfv = g_pProfileView->m_hwnd;
+	HWND hWndVpn = g_pVoicePanel->m_hwnd;
 	HWND hWndGuh = g_pGuildHeader->m_hwnd;
 	HWND hWndGul = g_pGuildLister->m_hwnd;
 	HWND hWndMel = g_pMemberList->m_mainHwnd;
@@ -349,6 +353,7 @@ void ProperlySizeControls(HWND hWnd)
 	rect.top = rect.bottom - g_BottomBarHeight + scaled10;
 	rect.right = rect.left + channelViewListWidth;
 	MoveWindow(hWndPfv, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, TRUE);
+	MoveWindow(hWndVpn, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, TRUE);
 	rect = rect2;
 
 	rect.left   = scaled10 + guildListerWidth + scaled10;
@@ -981,8 +986,22 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			int off = ScaleByDPI(10) + g_ChannelViewListWidth2;
 
 			if (g_bChannelListVisible) {
+				bool voiceActive = false;
+				DiscordInstance* pInst = GetDiscordInstance();
+				if (pInst) {
+					VoiceManager& vm = pInst->GetVoiceManager();
+					voiceActive = vm.IsConnected() || vm.IsConnecting() || vm.IsWaitingForServer();
+				}
+
 				ShowWindow(g_pChannelView->m_hwnd, SW_SHOWNORMAL);
-				ShowWindow(g_pProfileView->m_hwnd, SW_SHOWNORMAL);
+				if (voiceActive) {
+					ShowWindow(g_pVoicePanel->m_hwnd, SW_SHOWNOACTIVATE);
+					ShowWindow(g_pProfileView->m_hwnd, SW_HIDE);
+				}
+				else {
+					ShowWindow(g_pProfileView->m_hwnd, SW_SHOWNORMAL);
+					ShowWindow(g_pVoicePanel->m_hwnd, SW_HIDE);
+				}
 				UpdateWindow(g_pChannelView->m_hwnd);
 				UpdateWindow(g_pProfileView->m_hwnd);
 				ResizeWindow(g_pMessageList->m_hwnd, off, 0, true, false, true);
@@ -991,6 +1010,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			else {
 				ShowWindow(g_pChannelView->m_hwnd, SW_HIDE);
 				ShowWindow(g_pProfileView->m_hwnd, SW_HIDE);
+				ShowWindow(g_pVoicePanel->m_hwnd, SW_HIDE);
 				UpdateWindow(g_pChannelView->m_hwnd);
 				UpdateWindow(g_pProfileView->m_hwnd);
 				ResizeWindow(g_pMessageList->m_hwnd, -off, 0, true, false, true);
@@ -1061,6 +1081,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					g_pChannelView->RemoveCategoryIfNeeded(ch);
 
 				g_pChannelView->CommitChannels();
+				g_pChannelView->UpdateVoiceMembers();
 			}
 
 			break;
@@ -1131,6 +1152,12 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 			if (GetDiscordInstance()->GetGatewayID() == pParm->m_gatewayId)
 				GetDiscordInstance()->HandleGatewayMessage(pParm->m_payload);
+			else if (GetDiscordInstance()->GetVoiceManager().GetVoiceConnectionID() == pParm->m_gatewayId)
+				GetDiscordInstance()->GetVoiceManager().OnWebSocketMessage(pParm->m_gatewayId, pParm->m_payload);
+			else if (GetDiscordInstance()->GetStreamManager().GetStreamConnectionID() == pParm->m_gatewayId)
+				GetDiscordInstance()->GetStreamManager().OnWebSocketMessage(pParm->m_gatewayId, pParm->m_payload);
+			else if (GetDiscordInstance()->GetStreamViewer().GetViewerConnectionID() == pParm->m_gatewayId)
+				GetDiscordInstance()->GetStreamViewer().OnWebSocketMessage(pParm->m_gatewayId, pParm->m_payload);
 
 			if (GetQRCodeDialog()->GetGatewayID() == pParm->m_gatewayId)
 				GetQRCodeDialog()->HandleGatewayMessage(pParm->m_payload);
@@ -1232,6 +1259,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			IChannelView::InitializeClasses();
 			MessageEditor::InitializeClass();
 			LoadingMessage::InitializeClass();
+			VoicePanel::InitializeClass();
 
 			RECT rect = {}, rect2 = {};
 			GetClientRect(hWnd, &rect);
@@ -1251,6 +1279,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			g_pStatusBar   = StatusBar::Create(hWnd);
 			g_pMessageList = MessageList::Create(hWnd, &rect);
 			g_pProfileView = ProfileView::Create(hWnd, &rect, CID_PROFILEVIEW, true);
+			g_pVoicePanel  = VoicePanel::Create(hWnd, &rect, CID_VOICEPANEL);
 			g_pGuildHeader = GuildHeader::Create(hWnd, &rect);
 			g_pGuildLister = GuildLister::Create(hWnd, &rect);
 			g_pMemberList  = IMemberList::CreateMemberList(hWnd, &rect);
@@ -1291,6 +1320,54 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 			EnableMenuItem(GetSubMenu(GetMenu(hWnd), 0), ID_FILE_RECONNECTTODISCORD, MF_GRAYED);
 			break;
+		case WM_VOICESTATECHANGE:
+		{
+			g_pStatusBar->UpdateVoiceState();
+			g_pVoicePanel->UpdateVisibility();
+			g_pVoicePanel->Update();
+			g_pChannelView->UpdateVoiceMembers();
+
+			bool voiceActive = false;
+			DiscordInstance* pInst = GetDiscordInstance();
+			if (pInst) {
+				VoiceManager& vm = pInst->GetVoiceManager();
+				voiceActive = vm.IsConnected() || vm.IsConnecting() || vm.IsWaitingForServer();
+			}
+
+			if (g_bChannelListVisible)
+			{
+				if (voiceActive) {
+					ShowWindow(g_pProfileView->m_hwnd, SW_HIDE);
+				}
+				else {
+					ShowWindow(g_pProfileView->m_hwnd, SW_SHOWNORMAL);
+				}
+			}
+			break;
+		}
+		case WM_STREAMSTATECHANGE:
+		{
+			// Update voice panel to reflect streaming state (Go Live button)
+			g_pVoicePanel->Update();
+
+			// Check if stream viewer needs a window
+			DiscordInstance* pInstSV = GetDiscordInstance();
+			if (pInstSV)
+			{
+				StreamViewer& sv = pInstSV->GetStreamViewer();
+				if (sv.IsWatching())
+				{
+					// TODO: get streamer name from stream key
+					CreateStreamViewerWindow("User");
+
+					// Wire up frame callback
+					sv.SetFrameCallback([](const uint8_t* pixels, int w, int h) {
+						StreamViewerOnFrame(pixels, w, h);
+					});
+				}
+			}
+			break;
+		}
 		case WM_CONNECTING: {
 			if (!g_bFromStartup || !GetLocalSettings()->GetStartMinimized())
 				g_pLoadingMessage->Show();
@@ -1388,6 +1465,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			SAFE_DELETE(g_pGuildLister);
 			SAFE_DELETE(g_pMessageList);
 			SAFE_DELETE(g_pProfileView);
+			SAFE_DELETE(g_pVoicePanel);
 
 			SAFE_DELETE(g_pStatusBar);
 			SAFE_DELETE(g_pMemberList);
@@ -2046,6 +2124,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLin
 		return 1;
 
 	if (!RegisterImageViewerClass())
+		return 1;
+
+	if (!RegisterStreamViewerClass())
 		return 1;
 
 	HACCEL hAccTable = LoadAccelerators(g_hInstance, MAKEINTRESOURCE(IDR_MAIN_ACCELS));

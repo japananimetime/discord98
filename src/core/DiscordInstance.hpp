@@ -21,6 +21,9 @@
 #include "state/UserGuildSettings.hpp"
 #include "models/GuildListItem.hpp"
 #include "text/FormattedText.hpp"
+#include "voice/VoiceManager.hpp"
+#include "stream/StreamManager.hpp"
+#include "stream/StreamViewer.hpp"
 
 struct NetRequest;
 
@@ -123,6 +126,12 @@ namespace GatewayOp
 		SUBSCRIBE_DM = 13,
 		SUBSCRIBE_GUILD,
 
+		STREAM_CREATE = 18,
+		STREAM_DELETE = 19,
+		STREAM_WATCH = 20,
+		STREAM_PING = 21,
+		STREAM_SET_PAUSED = 22,
+
 		UPDATE_SUBSCRIPTIONS = 37, // guess - update channels subscribed to
 		// payload:
 		// example payload: {'d': {'subscriptions': {'GUILDIDHERE': {'channels': {'CHANNELID1': [[0, 99]], 'CHANNELID2': [[0, 99]]}}}}, 'op': 37}
@@ -210,6 +219,15 @@ public:
 
 	// Notification manager
 	NotificationManager m_notificationManager;
+
+	// Voice manager
+	VoiceManager m_voiceManager;
+
+	// Stream manager (screen share / "Go Live")
+	StreamManager m_streamManager;
+
+	// Stream viewer (watching others' streams)
+	StreamViewer m_streamViewer;
 
 	// List of channels user cannot view because an HTTPS request related
 	// to them returned a 403.  Frankly this shouldn't be usable, but oh well.
@@ -482,6 +500,18 @@ public:
 	void LaunchURL(const std::string& url);
 
 	// Check if we did the initial API_URL/gateway request.
+	// Voice
+	VoiceManager& GetVoiceManager() { return m_voiceManager; }
+	void SendVoiceStateUpdate(Snowflake guild, Snowflake channel, bool selfMute, bool selfDeaf);
+
+	// Stream (screen share / "Go Live")
+	StreamManager& GetStreamManager() { return m_streamManager; }
+	StreamViewer& GetStreamViewer() { return m_streamViewer; }
+	void SendStreamCreate(Snowflake guildId, Snowflake channelId);
+	void SendStreamDelete(const std::string& streamKey);
+	void SendStreamSetPaused(const std::string& streamKey, bool paused);
+	void SendStreamWatch(const std::string& streamKey);
+
 	bool HasGatewayURL() const { return !m_gatewayUrl.empty(); }
 
 	// Reset the initial gateway URL. Used when switching service providers.
@@ -496,6 +526,9 @@ public:
 public:
 	DiscordInstance(std::string token) : m_token(token), m_notificationManager(this) {
 		InitDispatchFunctions();
+		m_voiceManager.Init(this);
+		m_streamManager.Init(this);
+		m_streamViewer.Init(this);
 	}
 
 	void HandleRequest(NetRequest* pReq);
@@ -550,6 +583,11 @@ private:
 	void HandleTYPING_START(nlohmann::json& j);
 	void HandlePRESENCE_UPDATE(nlohmann::json& j);
 	void HandlePASSIVE_UPDATE_V1(nlohmann::json& j);
+	void HandleVOICE_STATE_UPDATE(nlohmann::json& j);
+	void HandleVOICE_SERVER_UPDATE(nlohmann::json& j);
+	void HandleSTREAM_CREATE(nlohmann::json& j);
+	void HandleSTREAM_SERVER_UPDATE(nlohmann::json& j);
+	void HandleSTREAM_DELETE(nlohmann::json& j);
 
 private:
 	void HandleGuildMemberListUpdate_Sync(Snowflake guild, nlohmann::json& j);

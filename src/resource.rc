@@ -400,6 +400,10 @@ IDI_BALLOON             ICON                    "../res/icons/icon_balloon.ico"
 
 IDI_BALLOON_OFF         ICON                    "../res/icons/icon_balloon_block.ico"
 
+IDI_MIC                 ICON                    "../res/icons/icon_mic.ico"
+
+IDI_MIC_OFF             ICON                    "../res/icons/icon_mic_off.ico"
+
 IDI_SERVER              ICON                    "../res/icons/icon_server.ico"
 
 IDI_SERVER_2K           ICON                    "../res/icons/icon_server_2k.ico"
@@ -751,6 +755,32 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,74,236,10
 END
 
+IDD_DIALOG_VOICESETTINGS DIALOGEX 0, 0, 260, 242
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "Input",IDC_STATIC,6,7,248,62
+    LTEXT           "Device:",IDC_STATIC,12,19,24,8
+    COMBOBOX        IDC_VOICE_INPUT_DEVICE,40,17,208,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Volume:",IDC_STATIC,12,37,26,8
+    CONTROL         "",IDC_VOICE_INPUT_VOLUME,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,40,35,180,15
+    RTEXT           "100%",IDC_STATIC,222,37,26,8
+
+    GROUPBOX        "Output",IDC_STATIC,6,75,248,62
+    LTEXT           "Device:",IDC_STATIC,12,87,24,8
+    COMBOBOX        IDC_VOICE_OUTPUT_DEVICE,40,85,208,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Volume:",IDC_STATIC,12,105,26,8
+    CONTROL         "",IDC_VOICE_OUTPUT_VOLUME,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,40,103,180,15
+    RTEXT           "100%",IDC_STATIC,222,105,26,8
+
+    GROUPBOX        "Voice Processing",IDC_STATIC,6,143,248,55
+    LTEXT           "Voice gate:",IDC_STATIC,12,157,38,8
+    CONTROL         "",IDC_VOICE_GATE,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,52,155,168,15
+    RTEXT           "0%",IDC_STATIC,222,157,26,8
+    CONTROL         "Enable noise suppression (RNNoise)",IDC_VOICE_NOISE_SUPPRESS,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,177,236,10
+END
+
 IDD_DIALOG_ABOUT_ND DIALOG 0, 0, 247, 77
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "About Discord Messenger"
@@ -1075,6 +1105,16 @@ BEGIN
         HORZGUIDE, 74
     END
 
+    IDD_DIALOG_VOICESETTINGS, DIALOG
+    BEGIN
+        LEFTMARGIN, 6
+        RIGHTMARGIN, 254
+        VERTGUIDE, 12
+        VERTGUIDE, 248
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 234
+    END
+
     IDD_DIALOG_ABOUT_ND, DIALOG
     BEGIN
         LEFTMARGIN, 7
@@ -1264,6 +1304,11 @@ BEGIN
 END
 
 IDD_DIALOG_WINDOWSETTINGS AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+IDD_DIALOG_VOICESETTINGS AFX_DIALOG_LAYOUT
 BEGIN
     0
 END
@@ -1717,6 +1762,7 @@ BEGIN
     IDS_CANT_LAUNCH_URL_UNS "The specified link %s couldn't be opened, because Windows returned ""%s"". Most likely, your Windows version does not support directly opening URLs."
     IDS_CONFIRM_UNPIN       "You sure you want to remove this pinned message?\n\n%s (%s)\n\n%s"
     IDS_CONFIRM_UNPIN_TITLE "Discord Messenger - Unpin Message"
+    IDS_VOICE               "Voice"
 END
 
 #endif    // English (United States) resources

@@ -227,6 +227,20 @@ public:
 		m_bUseDoubleBuffering = b;
 	}
 
+	// Audio settings
+	const std::string& GetAudioInputDevice() const { return m_audioInputDevice; }
+	void SetAudioInputDevice(const std::string& s) { m_audioInputDevice = s; }
+	const std::string& GetAudioOutputDevice() const { return m_audioOutputDevice; }
+	void SetAudioOutputDevice(const std::string& s) { m_audioOutputDevice = s; }
+	int GetAudioInputVolume() const { return m_audioInputVolume; }
+	void SetAudioInputVolume(int v) { m_audioInputVolume = v; }
+	int GetAudioOutputVolume() const { return m_audioOutputVolume; }
+	void SetAudioOutputVolume(int v) { m_audioOutputVolume = v; }
+	int GetAudioVoiceGate() const { return m_audioVoiceGate; }
+	void SetAudioVoiceGate(int v) { m_audioVoiceGate = v; }
+	bool GetAudioNoiseSuppression() const { return m_audioNoiseSuppression; }
+	void SetAudioNoiseSuppression(bool b) { m_audioNoiseSuppression = b; }
+
 private:
 	std::string m_token;
 	std::string m_discordApi;
@@ -258,6 +272,12 @@ private:
 	bool m_bUse12HourTime = false;
 	bool m_bShowBlockedMessages = false;
 	bool m_bUseDoubleBuffering = false;
+	std::string m_audioInputDevice;
+	std::string m_audioOutputDevice;
+	int m_audioInputVolume = 100;
+	int m_audioOutputVolume = 100;
+	int m_audioVoiceGate = 0;
+	bool m_audioNoiseSuppression = false;
 	time_t m_remindUpdatesOn = 0;
 	int m_width = 1000;
 	int m_height = 700;

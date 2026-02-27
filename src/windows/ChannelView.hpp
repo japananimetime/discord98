@@ -41,8 +41,15 @@ private:
 		m_nDmIcon,
 		m_nGroupDmIcon,
 		m_nChannelDotIcon,
-		m_nChannelRedIcon;
+		m_nChannelRedIcon,
+		m_nVoiceMemberIcon;
+	std::set<int> m_voiceMemberIndices;
 	std::map<int, HTREEITEM> m_hPrev;
+
+	// Tree subclass
+	WNDPROC m_origTreeWndProc = NULL;
+	HIMAGELIST m_hTreeImageList = NULL;
+	bool m_bSuppressVoiceJoin = false;
 
 	// List specific
 	WNDPROC m_origListWndProc = NULL;
@@ -61,6 +68,7 @@ public:
 	HWND GetListHWND() override { return m_listHwnd; }
 	HWND GetTreeHWND() override { return m_treeHwnd; }
 	void CommitChannels() override {}
+	void UpdateVoiceMembers() override;
 
 public:
 	void SetItemIcon(HTREEITEM hItem, int icon);
@@ -84,5 +92,6 @@ public:
 	static void InitializeClass();
 	static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 	static LRESULT CALLBACK ListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	static LRESULT CALLBACK TreeWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 };
 

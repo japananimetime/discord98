@@ -195,6 +195,16 @@ void Frontend_Win32::OnNotification()
 	GetShellNotification()->OnNotification();
 }
 
+void Frontend_Win32::OnVoiceStateChange()
+{
+	PostMessage(g_Hwnd, WM_VOICESTATECHANGE, 0, 0);
+}
+
+void Frontend_Win32::OnStreamStateChange()
+{
+	PostMessage(g_Hwnd, WM_STREAMSTATECHANGE, 0, 0);
+}
+
 void Frontend_Win32::OnAttachmentDownloaded(bool bIsProfilePicture, const uint8_t* pData, size_t nSize, const std::string& additData)
 {
 	int nImSize = bIsProfilePicture ? -1 : 0;
@@ -345,6 +355,12 @@ void Frontend_Win32::OnWebsocketClose(int gatewayID, int errorCode, const std::s
 		GetDiscordInstance()->GatewayClosed(errorCode);
 	else if (GetQRCodeDialog()->GetGatewayID() == gatewayID)
 		GetQRCodeDialog()->HandleGatewayClose(errorCode);
+	else if (GetDiscordInstance()->GetVoiceManager().GetVoiceConnectionID() == gatewayID)
+		GetDiscordInstance()->GetVoiceManager().OnWebSocketClose(gatewayID, errorCode, message);
+	else if (GetDiscordInstance()->GetStreamManager().GetStreamConnectionID() == gatewayID)
+		GetDiscordInstance()->GetStreamManager().OnWebSocketClose(gatewayID, errorCode, message);
+	else if (GetDiscordInstance()->GetStreamViewer().GetViewerConnectionID() == gatewayID)
+		GetDiscordInstance()->GetStreamViewer().OnWebSocketClose(gatewayID, errorCode, message);
 	else
 		DbgPrintW("Unknown gateway connection %d closed: %d", gatewayID, errorCode);
 }

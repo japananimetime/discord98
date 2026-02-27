@@ -163,6 +163,20 @@ bool LocalSettings::Load()
 
 	if (j.contains("AddExtraHeaders"))
 		m_bAddExtraHeaders = j["AddExtraHeaders"];
+
+	if (j.contains("AudioInputDevice"))
+		m_audioInputDevice = j["AudioInputDevice"];
+	if (j.contains("AudioOutputDevice"))
+		m_audioOutputDevice = j["AudioOutputDevice"];
+	if (j.contains("AudioInputVolume"))
+		m_audioInputVolume = j["AudioInputVolume"];
+	if (j.contains("AudioOutputVolume"))
+		m_audioOutputVolume = j["AudioOutputVolume"];
+	if (j.contains("AudioVoiceGate"))
+		m_audioVoiceGate = j["AudioVoiceGate"];
+	if (j.contains("AudioNoiseSuppression"))
+		m_audioNoiseSuppression = j["AudioNoiseSuppression"];
+
 	return true;
 }
 
@@ -203,7 +217,13 @@ bool LocalSettings::Save()
 	j["Use12HourTime"] = m_bUse12HourTime;
 	j["ShowBlockedMessages"] = m_bShowBlockedMessages;
 	j["UseDoubleBuffering"] = m_bUseDoubleBuffering;
-	
+	j["AudioInputDevice"] = m_audioInputDevice;
+	j["AudioOutputDevice"] = m_audioOutputDevice;
+	j["AudioInputVolume"] = m_audioInputVolume;
+	j["AudioOutputVolume"] = m_audioOutputVolume;
+	j["AudioVoiceGate"] = m_audioVoiceGate;
+	j["AudioNoiseSuppression"] = m_audioNoiseSuppression;
+
 	if (m_bSaveWindowSize) {
 		j["WindowWidth"] = m_width;
 		j["WindowHeight"] = m_height;

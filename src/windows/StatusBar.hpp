@@ -46,6 +46,7 @@ public:
 	void RemoveTypingName(Snowflake sf);
 	void ClearTypers();
 	void UpdateCharacterCounter(int nChars, int nCharsMax);
+	void UpdateVoiceState();
 
 public:
 	HWND m_hwnd = NULL;

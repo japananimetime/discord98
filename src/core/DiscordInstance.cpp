@@ -2271,6 +2271,21 @@ void DiscordInstance::ParseAndAddGuild(nlohmann::json& elem)
 		g.m_emoji[emoji.m_id] = emoji;
 	}
 
+	// parse voice states (present in GUILD_CREATE but not in READY's lazy guilds)
+	if (elem.contains("voice_states") && elem["voice_states"].is_array())
+	{
+		for (auto& vs : elem["voice_states"])
+		{
+			Snowflake userId = GetSnowflake(vs, "user_id");
+			Snowflake channelId = 0;
+			if (vs.contains("channel_id") && !vs["channel_id"].is_null())
+				channelId = GetSnowflake(vs, "channel_id");
+
+			if (channelId != 0)
+				g.m_voiceMembers[channelId].insert(userId);
+		}
+	}
+
 	// Check if the guild already exists.  If it does, replace its contents.
 	// I'm not totally sure why discord sends a GUILD_CREATE event.  Perhaps
 	// the server I was testing with is considered a "lazy guild"?
@@ -2311,6 +2326,11 @@ void DiscordInstance::InitDispatchFunctions()
 	DECL(TYPING_START);
 	DECL(PRESENCE_UPDATE);
 	DECL(PASSIVE_UPDATE_V1);
+	DECL(VOICE_STATE_UPDATE);
+	DECL(VOICE_SERVER_UPDATE);
+	DECL(STREAM_CREATE);
+	DECL(STREAM_SERVER_UPDATE);
+	DECL(STREAM_DELETE);
 
 	m_dmGuild.m_name = GetFrontend()->GetDirectMessagesText();
 }
@@ -2340,7 +2360,28 @@ void DiscordInstance::HandleREADY_SUPPLEMENTAL(Json& j)
 
 	Json& guilds = data["guilds"];
 	for (int i = 0; i < int(guilds.size()); i++)
+	{
 		guildsVec.push_back(GetSnowflake(guilds[i], "id"));
+
+		// Parse voice states from READY_SUPPLEMENTAL
+		if (guilds[i].contains("voice_states") && guilds[i]["voice_states"].is_array())
+		{
+			Guild* pGuild = GetGuild(guildsVec.back());
+			if (pGuild) {
+				pGuild->m_voiceMembers.clear();
+				for (auto& vs : guilds[i]["voice_states"])
+				{
+					Snowflake userId = GetSnowflake(vs, "user_id");
+					Snowflake channelId = 0;
+					if (vs.contains("channel_id") && !vs["channel_id"].is_null())
+						channelId = GetSnowflake(vs, "channel_id");
+
+					if (channelId != 0)
+						pGuild->m_voiceMembers[channelId].insert(userId);
+				}
+			}
+		}
+	}
 
 	Json& mergedPresences = data["merged_presences"];
 
@@ -2392,6 +2433,9 @@ void DiscordInstance::HandleREADY_SUPPLEMENTAL(Json& j)
 		else
 			pf->m_status = "";
 	}
+
+	// Refresh channel list to show voice members loaded from READY_SUPPLEMENTAL
+	GetFrontend()->OnVoiceStateChange();
 }
 
 void DiscordInstance::HandleREADY(Json& j)
@@ -3347,4 +3391,209 @@ bool DiscordInstance::SendMessageAndAttachmentToCurrentChannel(
 
 	m_nextAttachmentID++;
 	return true;
+}
+
+// == VOICE ==
+
+void DiscordInstance::SendVoiceStateUpdate(Snowflake guild, Snowflake channel, bool selfMute, bool selfDeaf)
+{
+	using namespace GatewayOp;
+
+	Json j;
+	j["op"] = VOICE_STATE_UPDATE;
+
+	Json data;
+	data["guild_id"] = std::to_string(guild);
+
+	if (channel == 0)
+		data["channel_id"] = nullptr;
+	else
+		data["channel_id"] = std::to_string(channel);
+
+	data["self_mute"] = selfMute;
+	data["self_deaf"] = selfDeaf;
+
+	j["d"] = data;
+
+	DbgPrintF("Sending voice state update: guild=%llu, channel=%llu, mute=%d, deaf=%d",
+		guild, channel, selfMute, selfDeaf);
+
+	GetWebsocketClient()->SendMsg(m_gatewayConnId, j.dump());
+}
+
+void DiscordInstance::HandleVOICE_STATE_UPDATE(Json& j)
+{
+	TRY {
+		Json& data = j["d"];
+
+		Snowflake userId = GetSnowflake(data, "user_id");
+		Snowflake channelId = 0;
+		if (data.contains("channel_id") && !data["channel_id"].is_null())
+			channelId = GetSnowflake(data, "channel_id");
+
+		std::string sessionId = GetFieldSafe(data, "session_id");
+
+		DbgPrintF("VOICE_STATE_UPDATE: user=%llu, channel=%llu, session=%s",
+			userId, channelId, sessionId.c_str());
+
+		// Update voice member tracking for the guild
+		Snowflake guildId = 0;
+		if (data.contains("guild_id") && !data["guild_id"].is_null())
+			guildId = GetSnowflake(data, "guild_id");
+
+		if (guildId != 0) {
+			Guild* pGuild = GetGuild(guildId);
+			if (pGuild) {
+				pGuild->UpdateVoiceState(userId, channelId);
+
+				// Refresh channel list if this guild is currently displayed
+				if (guildId == GetCurrentGuildID())
+					GetFrontend()->OnVoiceStateChange();
+			}
+		}
+
+		m_voiceManager.OnVoiceStateUpdate(sessionId, userId, channelId);
+	}
+	CATCH;
+}
+
+void DiscordInstance::HandleVOICE_SERVER_UPDATE(Json& j)
+{
+	TRY {
+		Json& data = j["d"];
+
+		std::string endpoint = GetFieldSafe(data, "endpoint");
+		std::string token = GetFieldSafe(data, "token");
+		Snowflake guildId = GetSnowflake(data, "guild_id");
+
+		DbgPrintF("VOICE_SERVER_UPDATE: endpoint=%s, guild=%llu",
+			endpoint.c_str(), guildId);
+
+		m_voiceManager.OnVoiceServerUpdate(endpoint, token, guildId);
+	}
+	CATCH;
+}
+
+// == STREAM (SCREEN SHARE / "GO LIVE") ==
+
+void DiscordInstance::SendStreamCreate(Snowflake guildId, Snowflake channelId)
+{
+	using namespace GatewayOp;
+
+	Json j;
+	j["op"] = STREAM_CREATE;
+
+	Json data;
+	data["type"] = "guild";
+	data["guild_id"] = std::to_string(guildId);
+	data["channel_id"] = std::to_string(channelId);
+	data["preferred_region"] = nullptr;
+
+	j["d"] = data;
+
+	DbgPrintF("Sending stream create: guild=%llu, channel=%llu", guildId, channelId);
+
+	GetWebsocketClient()->SendMsg(m_gatewayConnId, j.dump());
+}
+
+void DiscordInstance::SendStreamDelete(const std::string& streamKey)
+{
+	using namespace GatewayOp;
+
+	Json j;
+	j["op"] = STREAM_DELETE;
+
+	Json data;
+	data["stream_key"] = streamKey;
+
+	j["d"] = data;
+
+	DbgPrintF("Sending stream delete: key=%s", streamKey.c_str());
+
+	GetWebsocketClient()->SendMsg(m_gatewayConnId, j.dump());
+}
+
+void DiscordInstance::SendStreamSetPaused(const std::string& streamKey, bool paused)
+{
+	using namespace GatewayOp;
+
+	Json j;
+	j["op"] = STREAM_SET_PAUSED;
+
+	Json data;
+	data["stream_key"] = streamKey;
+	data["paused"] = paused;
+
+	j["d"] = data;
+
+	DbgPrintF("Sending stream set paused: key=%s, paused=%d", streamKey.c_str(), paused);
+
+	GetWebsocketClient()->SendMsg(m_gatewayConnId, j.dump());
+}
+
+void DiscordInstance::HandleSTREAM_CREATE(Json& j)
+{
+	TRY {
+		Json& data = j["d"];
+
+		std::string streamKey = GetFieldSafe(data, "stream_key");
+
+		DbgPrintF("STREAM_CREATE: stream_key=%s", streamKey.c_str());
+
+		m_streamManager.OnStreamCreate(streamKey);
+	}
+	CATCH;
+}
+
+void DiscordInstance::HandleSTREAM_SERVER_UPDATE(Json& j)
+{
+	TRY {
+		Json& data = j["d"];
+
+		std::string streamKey = GetFieldSafe(data, "stream_key");
+		std::string endpoint = GetFieldSafe(data, "endpoint");
+		std::string token = GetFieldSafe(data, "token");
+
+		DbgPrintF("STREAM_SERVER_UPDATE: stream_key=%s, endpoint=%s",
+			streamKey.c_str(), endpoint.c_str());
+
+		// Route to sender or viewer based on stream key
+		if (streamKey == m_streamManager.GetStreamKey())
+			m_streamManager.OnStreamServerUpdate(streamKey, endpoint, token);
+		else
+			m_streamViewer.OnStreamServerUpdate(streamKey, endpoint, token);
+	}
+	CATCH;
+}
+
+void DiscordInstance::HandleSTREAM_DELETE(Json& j)
+{
+	TRY {
+		Json& data = j["d"];
+
+		std::string streamKey = GetFieldSafe(data, "stream_key");
+
+		DbgPrintF("STREAM_DELETE: stream_key=%s", streamKey.c_str());
+
+		m_streamManager.OnStreamDelete(streamKey);
+		m_streamViewer.OnStreamDelete(streamKey);
+	}
+	CATCH;
+}
+
+void DiscordInstance::SendStreamWatch(const std::string& streamKey)
+{
+	using namespace GatewayOp;
+
+	Json j;
+	j["op"] = STREAM_WATCH;
+
+	Json data;
+	data["stream_key"] = streamKey;
+
+	j["d"] = data;
+
+	DbgPrintF("Sending stream watch: key=%s", streamKey.c_str());
+
+	GetWebsocketClient()->SendMsg(m_gatewayConnId, j.dump());
 }

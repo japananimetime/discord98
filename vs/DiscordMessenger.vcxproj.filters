@@ -674,6 +674,9 @@
     <ClInclude Include="..\src\windows\ProfileView.hpp">
       <Filter>Header Files\Windows\UI\Views</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\windows\VoicePanel.hpp">
+      <Filter>Header Files\Windows\UI\Views</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\windows\ProfilePopout.hpp">
       <Filter>Header Files\Windows\UI\Views</Filter>
     </ClInclude>
@@ -890,6 +893,9 @@
       <Filter>Source Files\Windows\UI\Views</Filter>
     </ClCompile>
     <ClCompile Include="..\src\windows\ProfileView.cpp">
+      <Filter>Source Files\Windows\UI\Views</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\windows\VoicePanel.cpp">
       <Filter>Source Files\Windows\UI\Views</Filter>
     </ClCompile>
     <ClCompile Include="..\src\windows\QuickSwitcher.cpp">

@@ -3,11 +3,14 @@
 #include "ShellNotification.hpp"
 #include "Main.hpp"
 #include "config/LocalSettings.hpp"
+#include <audio_engine.h>
+#include <audio_devices.h>
 
 #ifdef NEW_WINDOWS
 #include <uxtheme.h>
 #endif
 #include <commdlg.h>
+#include <commctrl.h>
 
 const eMessageStyle g_indexToMessageStyle[] = {
 	MS_3DFACE,
@@ -39,6 +42,7 @@ enum ePage
 	PG_CHAT,
 	PG_WINDOW,
 	PG_CONNECTION,
+	PG_VOICE,
 	PG_PAGE_COUNT,
 	PG_FIRST = PG_ACCOUNT_AND_PRIVACY
 };
@@ -271,6 +275,61 @@ void OptionsInitPage(HWND hwndDlg, int pageNum)
 				CheckDlgButton(hwndDlg, IDC_MINIMIZE_TO_NOTIF, BST_UNCHECKED);
 				GetLocalSettings()->SetMinimizeToNotif(false);
 			}
+			break;
+		}
+		case PG_VOICE:
+		{
+			// Populate input device combobox
+			HWND hInputDev = GetDlgItem(hwndDlg, IDC_VOICE_INPUT_DEVICE);
+			HWND hOutputDev = GetDlgItem(hwndDlg, IDC_VOICE_OUTPUT_DEVICE);
+
+			ComboBox_AddString(hInputDev, TEXT("Default"));
+			ComboBox_AddString(hOutputDev, TEXT("Default"));
+			ComboBox_SetCurSel(hInputDev, 0);
+			ComboBox_SetCurSel(hOutputDev, 0);
+
+			{
+				dv::AudioEngine* engine = static_cast<dv::AudioEngine*>(
+					GetDiscordInstance()->GetVoiceManager().GetAudioEngine());
+				if (engine) {
+					auto& devs = engine->GetDevices();
+					std::string savedInput = GetLocalSettings()->GetAudioInputDevice();
+					std::string savedOutput = GetLocalSettings()->GetAudioOutputDevice();
+
+					auto& capDevs = devs.GetCaptureDevices();
+					for (size_t i = 0; i < capDevs.size(); i++) {
+						LPTSTR tstr = ConvertCppStringToTString(capDevs[i].name);
+						ComboBox_AddString(hInputDev, tstr);
+						if (capDevs[i].name == savedInput)
+							ComboBox_SetCurSel(hInputDev, (int)(i + 1));
+						free(tstr);
+					}
+
+					auto& pbDevs = devs.GetPlaybackDevices();
+					for (size_t i = 0; i < pbDevs.size(); i++) {
+						LPTSTR tstr = ConvertCppStringToTString(pbDevs[i].name);
+						ComboBox_AddString(hOutputDev, tstr);
+						if (pbDevs[i].name == savedOutput)
+							ComboBox_SetCurSel(hOutputDev, (int)(i + 1));
+						free(tstr);
+					}
+				}
+			}
+
+			// Input volume slider (0-200)
+			SendDlgItemMessage(hwndDlg, IDC_VOICE_INPUT_VOLUME, TBM_SETRANGE, TRUE, MAKELPARAM(0, 200));
+			SendDlgItemMessage(hwndDlg, IDC_VOICE_INPUT_VOLUME, TBM_SETPOS, TRUE, GetLocalSettings()->GetAudioInputVolume());
+
+			// Output volume slider (0-200)
+			SendDlgItemMessage(hwndDlg, IDC_VOICE_OUTPUT_VOLUME, TBM_SETRANGE, TRUE, MAKELPARAM(0, 200));
+			SendDlgItemMessage(hwndDlg, IDC_VOICE_OUTPUT_VOLUME, TBM_SETPOS, TRUE, GetLocalSettings()->GetAudioOutputVolume());
+
+			// Voice gate slider (0-100)
+			SendDlgItemMessage(hwndDlg, IDC_VOICE_GATE, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
+			SendDlgItemMessage(hwndDlg, IDC_VOICE_GATE, TBM_SETPOS, TRUE, GetLocalSettings()->GetAudioVoiceGate());
+
+			// Noise suppression checkbox
+			CheckDlgButton(hwndDlg, IDC_VOICE_NOISE_SUPPRESS, GetLocalSettings()->GetAudioNoiseSuppression() ? BST_CHECKED : BST_UNCHECKED);
 			break;
 		}
 		case PG_CONNECTION:
@@ -566,6 +625,58 @@ INT_PTR OptionsHandleCommand(HWND hwndParent, HWND hWnd, int pageNum, UINT uMsg,
 			}
 			break;
 		}
+		case PG_VOICE:
+		{
+			switch (LOWORD(wParam))
+			{
+				case IDC_VOICE_INPUT_DEVICE:
+				{
+					if (HIWORD(wParam) != CBN_SELCHANGE) break;
+					int sel = ComboBox_GetCurSel(GetDlgItem(hWnd, IDC_VOICE_INPUT_DEVICE));
+					dv::AudioEngine* engine = static_cast<dv::AudioEngine*>(
+						GetDiscordInstance()->GetVoiceManager().GetAudioEngine());
+					if (sel <= 0) {
+						GetLocalSettings()->SetAudioInputDevice("");
+					} else if (engine) {
+						auto& capDevs = engine->GetDevices().GetCaptureDevices();
+						int idx = sel - 1;
+						if (idx >= 0 && idx < (int)capDevs.size()) {
+							GetLocalSettings()->SetAudioInputDevice(capDevs[idx].name);
+							engine->SetCaptureDevice(idx);
+						}
+					}
+					break;
+				}
+				case IDC_VOICE_OUTPUT_DEVICE:
+				{
+					if (HIWORD(wParam) != CBN_SELCHANGE) break;
+					int sel = ComboBox_GetCurSel(GetDlgItem(hWnd, IDC_VOICE_OUTPUT_DEVICE));
+					dv::AudioEngine* engine = static_cast<dv::AudioEngine*>(
+						GetDiscordInstance()->GetVoiceManager().GetAudioEngine());
+					if (sel <= 0) {
+						GetLocalSettings()->SetAudioOutputDevice("");
+					} else if (engine) {
+						auto& pbDevs = engine->GetDevices().GetPlaybackDevices();
+						int idx = sel - 1;
+						if (idx >= 0 && idx < (int)pbDevs.size()) {
+							GetLocalSettings()->SetAudioOutputDevice(pbDevs[idx].name);
+							engine->SetPlaybackDevice(idx);
+						}
+					}
+					break;
+				}
+				case IDC_VOICE_NOISE_SUPPRESS:
+				{
+					bool checked = IsDlgButtonChecked(hWnd, IDC_VOICE_NOISE_SUPPRESS);
+					GetLocalSettings()->SetAudioNoiseSuppression(checked);
+					dv::AudioEngine* engine = static_cast<dv::AudioEngine*>(
+						GetDiscordInstance()->GetVoiceManager().GetAudioEngine());
+					if (engine) engine->SetNoiseSuppress(checked);
+					break;
+				}
+			}
+			break;
+		}
 		case PG_CONNECTION:
 		{
 			switch (LOWORD(wParam))
@@ -662,6 +773,31 @@ INT_PTR CALLBACK OptionsChildDialogProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		case WM_COMMAND:
 			return OptionsHandleCommand(hwndParent, hWnd, pHdr->pageNum, uMsg, wParam, lParam);
 
+		case WM_HSCROLL:
+		{
+			if (pHdr->pageNum == PG_VOICE)
+			{
+				HWND hTrack = (HWND)lParam;
+				int pos = (int)SendMessage(hTrack, TBM_GETPOS, 0, 0);
+				dv::AudioEngine* engine = static_cast<dv::AudioEngine*>(
+					GetDiscordInstance()->GetVoiceManager().GetAudioEngine());
+
+				if (hTrack == GetDlgItem(hWnd, IDC_VOICE_INPUT_VOLUME)) {
+					GetLocalSettings()->SetAudioInputVolume(pos);
+					if (engine) engine->SetCaptureGain(pos / 100.0);
+				}
+				else if (hTrack == GetDlgItem(hWnd, IDC_VOICE_OUTPUT_VOLUME)) {
+					GetLocalSettings()->SetAudioOutputVolume(pos);
+					if (engine) engine->SetPlaybackGain(pos / 100.0);
+				}
+				else if (hTrack == GetDlgItem(hWnd, IDC_VOICE_GATE)) {
+					GetLocalSettings()->SetAudioVoiceGate(pos);
+					if (engine) engine->SetCaptureGate(pos / 100.0);
+				}
+			}
+			break;
+		}
+
 		case WM_INITDIALOG:
 		{
 			OnChildDialogInit(hWnd);
@@ -743,6 +879,7 @@ HRESULT OnPreferenceDialogInit(HWND hWnd)
 	AddTab(hwndTab, tie, PG_CHAT,                (LPTSTR)TmGetTString(IDS_CHAT));
 	AddTab(hwndTab, tie, PG_WINDOW,              (LPTSTR)TmGetTString(IDS_WINDOW));
 	AddTab(hwndTab, tie, PG_CONNECTION,          (LPTSTR)TmGetTString(IDS_CONNECTION));
+	AddTab(hwndTab, tie, PG_VOICE,               (LPTSTR)TmGetTString(IDS_VOICE));
 
 	// Lock the resources for the child dialog boxes.
 	pHeader->apRes[PG_ACCOUNT_AND_PRIVACY] = LockDialogResource(MAKEINTRESOURCE(IDD_DIALOG_MY_ACCOUNT));
@@ -751,6 +888,7 @@ HRESULT OnPreferenceDialogInit(HWND hWnd)
 	pHeader->apRes[        PG_CHAT       ] = LockDialogResource(MAKEINTRESOURCE(IDD_DIALOG_CHATSETTINGS));
 	pHeader->apRes[       PG_WINDOW      ] = LockDialogResource(MAKEINTRESOURCE(IDD_DIALOG_WINDOWSETTINGS));
 	pHeader->apRes[     PG_CONNECTION    ] = LockDialogResource(MAKEINTRESOURCE(IDD_DIALOG_CONNECTION));
+	pHeader->apRes[       PG_VOICE       ] = LockDialogResource(MAKEINTRESOURCE(IDD_DIALOG_VOICESETTINGS));
 
 	RECT rcTab;
 	SetRectEmpty(&rcTab);

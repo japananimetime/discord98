@@ -21,6 +21,7 @@ public:
 	virtual void AddChannel(const Channel& channel) = 0;
 	virtual void RemoveCategoryIfNeeded(const Channel& channel) = 0;
 	virtual void CommitChannels() = 0;
+	virtual void UpdateVoiceMembers() = 0;
 
 	// these are only used for checking if character events should be redirected
 	// so, these can be the same for all it cares

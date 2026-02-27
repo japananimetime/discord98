@@ -39,6 +39,8 @@ public:
 	virtual bool OnUpdateProgress(Snowflake key, size_t offset, size_t length) = 0;
 	virtual void OnStopProgress(Snowflake key) = 0;
 	virtual void OnNotification() = 0;
+	virtual void OnVoiceStateChange() = 0;
+	virtual void OnStreamStateChange() = 0;
 
 	// Error messages
 	virtual void OnGenericError(const std::string& message) = 0;

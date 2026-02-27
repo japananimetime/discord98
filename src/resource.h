@@ -105,6 +105,8 @@
 #define IDR_LINK_CONTEXT                104
 #define IDI_PROFILE_BORDER_UNREAD_2K    105
 #define IDR_IMAGE_CONTEXT               105
+#define IDI_MIC                         106
+#define IDI_MIC_OFF                     107
 #define IDB_TARGET                      200
 #define IDB_CHANNEL                     201
 #define IDB_CATEGORY                    202
@@ -153,6 +155,7 @@
 #define IDD_DIALOG_UPLOADING_ND         426
 #define IDD_DIALOG_GUILD_CHOOSER_ND     427
 #define IDD_DIALOG_PREFERENCES_ND       428
+#define IDD_DIALOG_VOICESETTINGS        429
 #define IDR_MAINMENU                    501
 #define IDR_MESSAGE_CONTEXT             502
 #define IDR_GUILD_CONTEXT               503
@@ -337,6 +340,7 @@
 #define IDS_CANT_LAUNCH_URL_UNS         775
 #define IDS_CONFIRM_UNPIN               776
 #define IDS_CONFIRM_UNPIN_TITLE         777
+#define IDS_VOICE                       778
 #define IDC_OPTIONS_TABS                801
 #define IDC_MY_ACCOUNT_BOX              802
 #define IDC_MY_ACCOUNT_NAME             803
@@ -443,6 +447,12 @@
 #define IDC_MINIMIZE_TO_NOTIF           904
 #define IDC_HOW_GET_TOKEN               905
 #define IDC_DOUBLE_BUFFERING            917
+#define IDC_VOICE_INPUT_DEVICE          920
+#define IDC_VOICE_OUTPUT_DEVICE         921
+#define IDC_VOICE_INPUT_VOLUME          922
+#define IDC_VOICE_OUTPUT_VOLUME         923
+#define IDC_VOICE_GATE                  924
+#define IDC_VOICE_NOISE_SUPPRESS        925
 #define ID_FILE_PREFERENCES             1001
 #define ID_FILE_STOPALLSPEECH           1002
 #define ID_FILE_EXIT                    1003

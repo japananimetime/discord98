@@ -78,6 +78,7 @@ public:
 	void AddChannel(const Channel& channel) override;
 	void RemoveCategoryIfNeeded(const Channel& channel) override;
 	void CommitChannels() override;
+	void UpdateVoiceMembers() override {}
 	HWND GetListHWND() override { return m_listHwnd; }
 	HWND GetTreeHWND() override { return m_listHwnd; }
 

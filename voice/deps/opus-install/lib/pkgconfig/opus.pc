@@ -1,0 +1,16 @@
+# Opus codec reference implementation pkg-config file
+
+prefix=F:/Projects/discord98/voice/deps/opus-install
+exec_prefix=F:/Projects/discord98/voice/deps/opus-install
+libdir=F:/Projects/discord98/voice/deps/opus-install/lib
+includedir=F:/Projects/discord98/voice/deps/opus-install/include
+
+Name: Opus
+Description: Opus IETF audio codec ( build)
+URL: https://opus-codec.org/
+Version: 0
+Requires:
+Conflicts:
+Libs: -LF:/Projects/discord98/voice/deps/opus-install/lib -lopus
+Libs.private: 
+Cflags: -IF:/Projects/discord98/voice/deps/opus-install/include/opus
