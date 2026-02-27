@@ -30,8 +30,7 @@ Using third party clients is against Discord's TOS! Although the risk of getting
 
 ## Screenshots
 
-![Windows 11 screenshot](doc/ss_11.png)
-![Windows XP screenshot](doc/ss_xp.png)
+![Voice & Streaming](doc/ss_voice.png)
 
 ## Building
 
